@@ -3,13 +3,16 @@ import { PrismaClient } from '@prisma/client/edge'
 import { withAccelerate } from '@prisma/extension-accelerate'
 import { sign, verify } from 'hono/jwt'
 
-const app = new Hono()
+const app = new Hono<{
+  Bindings: {
+    DATABASE_URL: string
+    JWT_SECRET: string
+  }
+}>()
 
 app.use('/api/v1/blog/*', async (c,next) => {
   const header = c.req.header('Authorization') || '';
   const token = header.split(' ')[1];
-
-  //@ts-ignore
   const response = await verify(token, c.env.JWT_SECRET)
   if (response.id) {
     next()  
@@ -18,23 +21,17 @@ app.use('/api/v1/blog/*', async (c,next) => {
   }
 })
 
-app.get('/', (c) => {
-  return c.text('Welcome to medium!')
-})
-
 app.post('/api/v1/signup', async (c) => {
+  const body = await c.req.json();
   const prisma = new PrismaClient({
-    //@ts-ignore
-    datasourceUrl: c.env.DATABASE_URL,
+   datasourceUrl: c.env.DATABASE_URL,
   }).$extends(withAccelerate());
   
-  
   try {
-    const body = await c.req.json();
 
     if(await prisma.user.findUnique({
       where: {
-        email: body.email
+        username: body.username
       }
     })) {
       return c.json({ error: 'User already exists' })
@@ -42,12 +39,11 @@ app.post('/api/v1/signup', async (c) => {
 
     const user = await prisma.user.create({
       data: {
-        email: body.email,
+        username: body.username,
         password: body.password,
       }
     });
   
-    //@ts-ignore
     const token = await sign({ id: user.id }, c.env.JWT_SECRET)
   
     return c.json({ jwt: token })
@@ -59,14 +55,13 @@ app.post('/api/v1/signup', async (c) => {
 
 app.post('/api/v1/signin', async (c) => {
   const prisma = new PrismaClient({
-    //@ts-ignore
     datasourceUrl: c.env.DATABASE_URL,
   }).$extends(withAccelerate());
   
   const body = await c.req.json();
   const user = await prisma.user.findUnique({
     where: {
-      email: body.email
+      username: body.username
     }
   })
 
@@ -79,7 +74,6 @@ app.post('/api/v1/signin', async (c) => {
     return c.json({ error: 'Invalid password' })
   }
 
-  //@ts-ignore
   const token = await sign({ id: user.id }, c.env.JWT_SECRET);
   return c.json({ jwt: token })
 
@@ -96,5 +90,9 @@ app.put('/api/v1/blog', (c) => {
 app.get('/api/v1/blog:id', (c) => {
   return c.text('Welcome to blog page!')
 })
+
+app.get('/api/v1/blog/bulk', (c) => {
+  return c.text('Welcome to blog page!')
+}) 
 
 export default app
